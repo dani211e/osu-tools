@@ -22,7 +22,6 @@ using osu.Game.Overlays;
 using osu.Game.Rulesets;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Scoring;
-using osu.Game.Scoring;
 using OsuParsers.Database.Objects;
 using OsuParsers.Decoders;
 using OsuParsers.Enums.Database;
@@ -222,6 +221,7 @@ namespace PerformanceCalculatorGUI.Screens
 
                 milliStart = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond; //timer start
 
+                ProcessorScoreDecoder scoreDecoder = new ProcessorScoreDecoder(null); //we're only using this for populating accuracy and rank hence a workingBeatmap is not needed
                 foreach (var scoreList in scoresDatabase.Scores)
                 {
                     if (token.IsCancellationRequested)
@@ -251,11 +251,14 @@ namespace PerformanceCalculatorGUI.Screens
                         if ((int)decodedScore.Ruleset != ruleset.Value.OnlineID) { continue; } //only calculate scores from selected ruleset
                         if (!(player.PreviousUsernames.Contains(decodedScore.PlayerName) || player.Username.Equals(decodedScore.PlayerName))) { continue; } //only calculate scores set by name inputted
                         
-                        var soloScore = populateScoreInfo(decodedScore, working, rulesetInstance);
+                        var soloScore = populateSoloScoreInfo(decodedScore, working, rulesetInstance);
 
                         Mod[] mods = soloScore.Mods.Select(x => x.ToMod(rulesetInstance)).ToArray();
 
                         var scoreInfo = soloScore.ToScoreInfo(rulesets, working.BeatmapInfo);
+                        scoreInfo = scoreDecoder.Parse(scoreInfo).ScoreInfo;
+                        soloScore.Accuracy = scoreInfo.Accuracy;
+                        soloScore.Rank = scoreInfo.Rank;
 
                         var difficultyAttributes = difficultyCalculator.Calculate(RulesetHelper.ConvertToLegacyDifficultyAdjustmentMods(rulesetInstance, mods));
 
@@ -357,18 +360,15 @@ namespace PerformanceCalculatorGUI.Screens
 
             return (null, false);
         }
-        private SoloScoreInfo populateScoreInfo(ParsedScore score, ProcessorWorkingBeatmap workingBeatmap, Ruleset ruleset)
+        private static SoloScoreInfo populateSoloScoreInfo(ParsedScore score, ProcessorWorkingBeatmap workingBeatmap, Ruleset ruleset)
         {
             var dummyMods = ruleset.ConvertFromLegacyMods((LegacyMods)score.Mods).ToArray();
-            var accuracyTuple = getAccuracy(score, dummyMods);
             APIMod[] apimods = dummyMods.Select(m => new APIMod(m)).ToArray();
-            APIUser dummyUser = new APIUser{   Username = score.PlayerName };
+            APIUser dummyUser = new APIUser{ Username = score.PlayerName };
             APIBeatmapSet dummySet = new APIBeatmapSet
             {
                 Title = workingBeatmap.Metadata.Title,
-                TitleUnicode = workingBeatmap.Metadata.TitleUnicode,
                 Artist = workingBeatmap.Metadata.Artist,
-                ArtistUnicode = workingBeatmap.Metadata.ArtistUnicode
             };
             APIBeatmap dummyBeatmap = new APIBeatmap
             {
@@ -383,8 +383,6 @@ namespace PerformanceCalculatorGUI.Screens
             };
             SoloScoreInfo soloScoreInfo = new SoloScoreInfo
             {
-                Accuracy = accuracyTuple.Item1,
-                Rank = accuracyTuple.Item2,
                 TotalScore = score.ReplayScore,
                 Statistics = dummyStatistics,
                 MaxCombo = score.Combo,
@@ -399,42 +397,6 @@ namespace PerformanceCalculatorGUI.Screens
             };
 
             return soloScoreInfo;
-        }
-        private static (double, ScoreRank) getAccuracy(ParsedScore score, Mod[] mods)
-        {	
-            //doesnt feel like this method should be necessary but i couldnt find another way of getting ScoreRank :tf:
-            double accuracy = 0;	
-            ScoreRank rank = ScoreRank.F;	
-            int countMiss = score.CountMiss;	
-            int count50 = score.Count50;	
-            int count100 = score.Count100;	
-            int count300 = score.Count300;	
-
-
-            if (score.Ruleset == 0)	
-            {	
-                int totalHits = count50 + count100 + count300 + countMiss;	
-                accuracy = totalHits > 0 ? (double)(count50 * 50 + count100 * 100 + count300 * 300) / (totalHits * 300) : 1;	
-
-                float ratio300 = (float)count300 / totalHits;	
-                float ratio50 = (float)count50 / totalHits;	
-
-                if (ratio300 == 1)	
-                    rank = mods.Any(m => m is ModHidden || m is ModFlashlight) ? ScoreRank.XH : ScoreRank.X;	
-                else if (ratio300 > 0.9 && ratio50 <= 0.01 && countMiss == 0)	
-                    rank = mods.Any(m => m is ModHidden || m is ModFlashlight) ? ScoreRank.SH : ScoreRank.S;	
-                else if ((ratio300 > 0.8 && countMiss == 0) || ratio300 > 0.9)	
-                    rank = ScoreRank.A;	
-                else if ((ratio300 > 0.7 && countMiss == 0) || ratio300 > 0.8)	
-                    rank = ScoreRank.B;	
-                else if (ratio300 > 0.6)	
-                    rank = ScoreRank.C;	
-                else	
-                    rank = ScoreRank.D;	
-
-            }	
-
-            return (accuracy, rank);	
         }
     }
     

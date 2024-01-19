@@ -20,6 +20,7 @@ using osu.Game.Online.API;
 using osu.Game.Online.API.Requests.Responses;
 using osu.Game.Overlays;
 using osu.Game.Rulesets;
+using osu.Game.Rulesets.Difficulty;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Scoring;
 using OsuParsers.Database.Objects;
@@ -221,7 +222,6 @@ namespace PerformanceCalculatorGUI.Screens
 
                 milliStart = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond; //timer start
 
-                ProcessorScoreDecoder scoreDecoder = new ProcessorScoreDecoder(null); //we're only using this for populating accuracy and rank hence a workingBeatmap is not needed
                 foreach (var scoreList in scoresDatabase.Scores)
                 {
                     if (token.IsCancellationRequested)
@@ -245,6 +245,9 @@ namespace PerformanceCalculatorGUI.Screens
                     var difficultyCalculator = rulesetInstance.CreateDifficultyCalculator(working);
                     var performanceCalculator = rulesetInstance.CreatePerformanceCalculator();
                     List<ParsedScore> sortedScores = scoreList.Item2.OrderBy(x => x.Mods).ToList();
+                    DifficultyAttributes difficultyAttributes = null;
+                    LegacyMods prevMods = (LegacyMods)sortedScores[0].Mods;
+                    
                     foreach(var decodedScore in sortedScores)
                     {
                         if(decodedScore.ScoreId == 0) { continue; } //only calculate PB's on a diff
@@ -257,7 +260,12 @@ namespace PerformanceCalculatorGUI.Screens
 
                         var scoreInfo = soloScore.ToScoreInfo(rulesets, working.BeatmapInfo);
 
-                        var difficultyAttributes = difficultyCalculator.Calculate(RulesetHelper.ConvertToLegacyDifficultyAdjustmentMods(rulesetInstance, mods));
+                        //Reuse diff attr. when mods haven't changed
+                        if ((LegacyMods)decodedScore.Mods != prevMods || difficultyAttributes == null) 
+                        { 
+                            difficultyAttributes = difficultyCalculator.Calculate(RulesetHelper.ConvertToLegacyDifficultyAdjustmentMods(rulesetInstance, mods));
+                            prevMods = (LegacyMods)decodedScore.Mods;
+                        }
 
                         var livePp = soloScore.PP ?? 0.0;
                         var perfAttributes = performanceCalculator?.Calculate(scoreInfo, difficultyAttributes);
@@ -343,8 +351,8 @@ namespace PerformanceCalculatorGUI.Screens
         }
         private static SortedDictionary<string, DbBeatmap> dbMapper(string osuPath)
         {
-            //decode db and return list of DbBeatmaps => return list with unique md5Hash => map to dictionary with md5Hash as key
-            var beatmapDict = DatabaseDecoder.DecodeOsu(new FileStream(osuPath + @"\osu!.db", FileMode.Open)).Beatmaps.DistinctBy(x => x.MD5Hash).ToDictionary(x => x.MD5Hash ?? "", x => x);
+            //decode db and return list of DbBeatmaps => map to dictionary with beatmap md5Hash as key
+            var beatmapDict = DatabaseDecoder.DecodeOsu(new FileStream(osuPath + @"\osu!.db", FileMode.Open)).Beatmaps.ToDictionary(x => x.MD5Hash ?? "", x => x);
             SortedDictionary<string, DbBeatmap> sortedBeatmapDict = new SortedDictionary<string, DbBeatmap>(beatmapDict);
             return sortedBeatmapDict;
         }
@@ -388,6 +396,7 @@ namespace PerformanceCalculatorGUI.Screens
                 BeatmapSet = dummySet,
             };
             soloScoreInfo.Rank = new ScoreProcessor(ruleset).RankFromAccuracy(soloScoreInfo.Accuracy);
+      
             return soloScoreInfo;
         }
     }

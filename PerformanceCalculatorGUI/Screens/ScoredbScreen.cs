@@ -256,9 +256,6 @@ namespace PerformanceCalculatorGUI.Screens
                         Mod[] mods = soloScore.Mods.Select(x => x.ToMod(rulesetInstance)).ToArray();
 
                         var scoreInfo = soloScore.ToScoreInfo(rulesets, working.BeatmapInfo);
-                        scoreInfo = scoreDecoder.Parse(scoreInfo).ScoreInfo;
-                        soloScore.Accuracy = scoreInfo.Accuracy;
-                        soloScore.Rank = scoreInfo.Rank;
 
                         var difficultyAttributes = difficultyCalculator.Calculate(RulesetHelper.ConvertToLegacyDifficultyAdjustmentMods(rulesetInstance, mods));
 
@@ -364,7 +361,6 @@ namespace PerformanceCalculatorGUI.Screens
         {
             var dummyMods = ruleset.ConvertFromLegacyMods((LegacyMods)score.Mods).ToArray();
             APIMod[] apimods = dummyMods.Select(m => new APIMod(m)).ToArray();
-            APIUser dummyUser = new APIUser{ Username = score.PlayerName };
             APIBeatmapSet dummySet = new APIBeatmapSet
             {
                 Title = workingBeatmap.Metadata.Title,
@@ -383,19 +379,15 @@ namespace PerformanceCalculatorGUI.Screens
             };
             SoloScoreInfo soloScoreInfo = new SoloScoreInfo
             {
-                TotalScore = score.ReplayScore,
+                Accuracy = RulesetHelper.GetAccuracyForRuleset(ruleset.RulesetInfo, dummyStatistics),
                 Statistics = dummyStatistics,
                 MaxCombo = score.Combo,
-                PP = 0,
-                User = dummyUser,
                 Mods = apimods, 
-                ID = (ulong?)score.ScoreId,
                 Beatmap = dummyBeatmap,
                 EndedAt = score.ScoreTimestamp,
                 BeatmapSet = dummySet,
-
             };
-
+            soloScoreInfo.Rank = new ScoreProcessor(ruleset).RankFromAccuracy(soloScoreInfo.Accuracy);
             return soloScoreInfo;
         }
     }

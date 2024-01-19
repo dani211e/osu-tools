@@ -41,6 +41,7 @@ namespace PerformanceCalculatorGUI.Screens
         private OverlayColourProvider colourProvider = new OverlayColourProvider(OverlayColourScheme.Plum);
 
         private StatefulButton calculationButton;
+        private LabelledSwitchButton fullCalculationSwitch;
         private VerboseLoadingLayer loadingLayer;
 
         private GridContainer layout;
@@ -101,6 +102,7 @@ namespace PerformanceCalculatorGUI.Screens
                                 ColumnDimensions = new[]
                                 {
                                     new Dimension(),
+                                    new Dimension(GridSizeMode.AutoSize),
                                     new Dimension(GridSizeMode.AutoSize)
                                 },
                                 RowDimensions = new[]
@@ -113,11 +115,16 @@ namespace PerformanceCalculatorGUI.Screens
                                     {
                                         usernameTextBox = new ExtendedLabelledTextBox
                                         {
-                                            RelativeSizeAxes = Axes.X,
                                             Anchor = Anchor.TopLeft,
                                             Label = "Username",
                                             PlaceholderText = "peppy",
                                             CommitOnFocusLoss = false
+                                        },
+                                        fullCalculationSwitch = new LabelledSwitchButton
+                                        {
+                                            Width = 200,
+                                            RelativeSizeAxes = Axes.None,
+                                            Label = "Full calculation",
                                         },
                                         calculationButton = new StatefulButton("Start calculation")
                                         {
@@ -219,6 +226,7 @@ namespace PerformanceCalculatorGUI.Screens
                 SortedDictionary<string, DbBeatmap> beatmapDict = dbMapper(osuPath);
                 var scoresDatabase = DatabaseDecoder.DecodeScores(new FileStream(osuPath + @"\scores.db", FileMode.Open));
                 int uniqueScoresCount = 0;
+                bool fullCalculation = fullCalculationSwitch.Current.Value;
 
                 milliStart = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond; //timer start
 
@@ -236,7 +244,7 @@ namespace PerformanceCalculatorGUI.Screens
 
                     string[] paths = { configManager.GetBindable<string>(Settings.OsuFolderPath).Value, "Songs", locallookup.Item1.FolderName, locallookup.Item1.FileName };
                     string beatmapFilePath = Path.Combine(paths);
-                    if (File.Exists(beatmapFilePath)) //song can exist in db but the corresponding file might not 
+                    if (File.Exists(beatmapFilePath)) //song can exist in db but the corresponding .osu file might not 
                         working = ProcessorWorkingBeatmap.FromFileOrId(beatmapFilePath, cachePath: configManager.GetBindable<string>(Settings.CachePath).Value);
 
                     //keep a count of ranked diffs with a score on it for bonusPP
@@ -250,7 +258,7 @@ namespace PerformanceCalculatorGUI.Screens
                     
                     foreach(var decodedScore in sortedScores)
                     {
-                        if(decodedScore.ScoreId == 0) { continue; } //only calculate PB's on a diff
+                        if(!fullCalculation && decodedScore.ScoreId == 0) { continue; } //only calculate submitted scores on a diff, unless requested otherwise
                         if ((int)decodedScore.Ruleset != ruleset.Value.OnlineID) { continue; } //only calculate scores from selected ruleset
                         if (!(player.PreviousUsernames.Contains(decodedScore.PlayerName) || player.Username.Equals(decodedScore.PlayerName))) { continue; } //only calculate scores set by name inputted
                         

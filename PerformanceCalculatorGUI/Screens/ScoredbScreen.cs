@@ -23,7 +23,6 @@ using osu.Game.Rulesets;
 using osu.Game.Rulesets.Difficulty;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Scoring;
-using OsuParsers.Database.Objects;
 using OsuParsers.Decoders;
 using OsuParsers.Enums.Database;
 using osuTK.Graphics;
@@ -223,7 +222,7 @@ namespace PerformanceCalculatorGUI.Screens
                 Schedule(() => loadingLayer.Text.Value = $"Calculating {player.Username} top scores...");
 
                 string osuPath = configManager.GetBindable<string>(Settings.OsuFolderPath).Value;
-                SortedDictionary<string, DbBeatmap> beatmapDict = dbMapper(osuPath);
+                SortedDictionary<string, string> beatmapDict = dbMapper(osuPath);
                 var scoresDatabase = DatabaseDecoder.DecodeScores(new FileStream(osuPath + @"\scores.db", FileMode.Open));
                 int uniqueScoresCount = 0;
                 bool fullCalculation = fullCalculationSwitch.Current.Value;
@@ -236,13 +235,14 @@ namespace PerformanceCalculatorGUI.Screens
                         return;
                     Schedule(() => loadingLayer.Text.Value = $"Calculating {scoreList.Item2[0].BeatmapMD5Hash}");
 
-                    (DbBeatmap, bool) locallookup = localBeatmapLookup(scoreList.Item2[0], beatmapDict);
+                    if (!beatmapDict.ContainsKey(scoreList.Item2[0].BeatmapMD5Hash))
+                        continue; //if map doesnt exist in db then skip;
+
+                    var localBeatmapPath = beatmapDict[scoreList.Item2[0].BeatmapMD5Hash];
                     ProcessorWorkingBeatmap working = null;
                     var tempScores = new List<ExtendedScore>();
-                    if(!locallookup.Item2 || locallookup.Item1.RankedStatus != RankedStatus.Ranked)
-                        continue; //if map doesnt exist in db or if it is not a ranked diff then skip;
 
-                    string[] paths = { configManager.GetBindable<string>(Settings.OsuFolderPath).Value, "Songs", locallookup.Item1.FolderName, locallookup.Item1.FileName };
+                    string[] paths = { configManager.GetBindable<string>(Settings.OsuFolderPath).Value, "Songs", localBeatmapPath };
                     string beatmapFilePath = Path.Combine(paths);
                     if (File.Exists(beatmapFilePath)) //song can exist in db but the corresponding .osu file might not 
                         working = ProcessorWorkingBeatmap.FromFileOrId(beatmapFilePath, cachePath: configManager.GetBindable<string>(Settings.CachePath).Value);
@@ -357,21 +357,14 @@ namespace PerformanceCalculatorGUI.Screens
             calculationCancellatonToken?.Dispose();
             calculationCancellatonToken = null;
         }
-        private static SortedDictionary<string, DbBeatmap> dbMapper(string osuPath)
+        private static SortedDictionary<string, string> dbMapper(string osuPath)
         {
             //decode db and return list of DbBeatmaps => map to dictionary with beatmap md5Hash as key
-            var beatmapDict = DatabaseDecoder.DecodeOsu(new FileStream(osuPath + @"\osu!.db", FileMode.Open)).Beatmaps.ToDictionary(x => x.MD5Hash ?? "", x => x);
-            SortedDictionary<string, DbBeatmap> sortedBeatmapDict = new SortedDictionary<string, DbBeatmap>(beatmapDict);
+            var beatmapDict = DatabaseDecoder.DecodeOsu(new FileStream(osuPath + @"\osu!.db", FileMode.Open)).Beatmaps
+                                            .Where(x => x.RankedStatus == RankedStatus.Ranked)
+                                            .ToDictionary(x => x.MD5Hash ?? "", x => Path.Combine(x.FolderName, x.FileName));
+            SortedDictionary<string, string> sortedBeatmapDict = new SortedDictionary<string, string>(beatmapDict);
             return sortedBeatmapDict;
-        }
-        private static (DbBeatmap, bool) localBeatmapLookup(ParsedScore score, SortedDictionary<string, DbBeatmap> beatmaps)
-        {
-            if (beatmaps.ContainsKey(score.BeatmapMD5Hash))
-            {
-                return (beatmaps[score.BeatmapMD5Hash], true);
-            }
-
-            return (null, false);
         }
         private static SoloScoreInfo populateSoloScoreInfo(ParsedScore score, ProcessorWorkingBeatmap workingBeatmap, Ruleset ruleset)
         {

@@ -233,8 +233,16 @@ namespace PerformanceCalculatorGUI.Screens
                 {
                     if (token.IsCancellationRequested)
                         return;
-                    Schedule(() => loadingLayer.Text.Value = $"Calculating {scoreList.Item2[0].BeatmapMD5Hash}");
+                    Schedule(() => loadingLayer.Text.Value = $"Calculating {scoreList.Item1}");
 
+                    scoreList.Item2.RemoveAll(x => !fullCalculation && x.ScoreId == 0); //only calculate submitted scores on a diff, unless requested otherwise
+                    scoreList.Item2.RemoveAll(x => (int)x.Ruleset != ruleset.Value.OnlineID); //only calculate scores from selected ruleset
+                    scoreList.Item2.RemoveAll(x => !(player.PreviousUsernames.Contains(x.PlayerName) || player.Username.Equals(x.PlayerName))); //only calculate scores set by name inputted
+                    
+                    if (scoreList.Item2.Count == 0)
+                        continue;
+                    //keep a count of ranked diffs with a score on it for bonusPP
+                    uniqueScoresCount++;
                     if (!beatmapDict.ContainsKey(scoreList.Item2[0].BeatmapMD5Hash))
                         continue; //if map doesnt exist in db then skip;
 
@@ -247,9 +255,6 @@ namespace PerformanceCalculatorGUI.Screens
                     if (File.Exists(beatmapFilePath)) //song can exist in db but the corresponding .osu file might not 
                         working = ProcessorWorkingBeatmap.FromFileOrId(beatmapFilePath, cachePath: configManager.GetBindable<string>(Settings.CachePath).Value);
 
-                    //keep a count of ranked diffs with a score on it for bonusPP
-                    uniqueScoresCount++;
-
                     var difficultyCalculator = rulesetInstance.CreateDifficultyCalculator(working);
                     var performanceCalculator = rulesetInstance.CreatePerformanceCalculator();
                     List<ParsedScore> sortedScores = scoreList.Item2.OrderBy(x => x.Mods).ToList();
@@ -257,11 +262,7 @@ namespace PerformanceCalculatorGUI.Screens
                     LegacyMods prevMods = (LegacyMods)sortedScores[0].Mods;
                     
                     foreach(var decodedScore in sortedScores)
-                    {
-                        if(!fullCalculation && decodedScore.ScoreId == 0) { continue; } //only calculate submitted scores on a diff, unless requested otherwise
-                        if ((int)decodedScore.Ruleset != ruleset.Value.OnlineID) { continue; } //only calculate scores from selected ruleset
-                        if (!(player.PreviousUsernames.Contains(decodedScore.PlayerName) || player.Username.Equals(decodedScore.PlayerName))) { continue; } //only calculate scores set by name inputted
-                        
+                    {                        
                         var soloScore = populateSoloScoreInfo(decodedScore, working, rulesetInstance);
 
                         Mod[] mods = soloScore.Mods.Select(x => x.ToMod(rulesetInstance)).ToArray();
@@ -282,7 +283,6 @@ namespace PerformanceCalculatorGUI.Screens
                         var extendedScore = new ExtendedScore(soloScore, livePp, perfAttributes);
                         tempScores.Add(extendedScore);
                     }
-
                     if (tempScores.Count == 0)
                         continue;
 

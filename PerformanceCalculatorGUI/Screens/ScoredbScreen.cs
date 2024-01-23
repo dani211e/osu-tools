@@ -23,13 +23,13 @@ using osu.Game.Rulesets;
 using osu.Game.Rulesets.Difficulty;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Scoring;
+using osu.Game.Scoring;
 using OsuParsers.Decoders;
 using OsuParsers.Enums.Database;
 using osuTK.Graphics;
 using PerformanceCalculatorGUI.Components;
 using PerformanceCalculatorGUI.Components.TextBoxes;
 using PerformanceCalculatorGUI.Configuration;
-using ParsedScore = OsuParsers.Database.Objects.Score;
 
 
 namespace PerformanceCalculatorGUI.Screens
@@ -223,33 +223,33 @@ namespace PerformanceCalculatorGUI.Screens
 
                 string osuPath = configManager.GetBindable<string>(Settings.OsuFolderPath).Value;
                 SortedDictionary<string, string> beatmapDict = dbMapper(osuPath);
-                var scoresDatabase = DatabaseDecoder.DecodeScores(new FileStream(osuPath + @"\scores.db", FileMode.Open));
+                var scoresDatabase = RulesetHelper.DecodeLegacyScoreDatabase(new FileStream(Path.Combine(osuPath, @"scores.db"), FileMode.Open), rulesetInstance);
                 int uniqueScoresCount = 0;
                 bool fullCalculation = fullCalculationSwitch.Current.Value;
-
                 milliStart = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond; //timer start
 
-                foreach (var scoreList in scoresDatabase.Scores)
+                foreach (var scoreList in scoresDatabase.Beatmaps)
                 {
                     if (token.IsCancellationRequested)
                         return;
-                    Schedule(() => loadingLayer.Text.Value = $"Calculating {scoreList.Item1}");
-
-                    scoreList.Item2.RemoveAll(x => !fullCalculation && x.ScoreId == 0); //only calculate submitted scores on a diff, unless requested otherwise
-                    scoreList.Item2.RemoveAll(x => (int)x.Ruleset != ruleset.Value.OnlineID); //only calculate scores from selected ruleset
-                    scoreList.Item2.RemoveAll(x => !(player.PreviousUsernames.Contains(x.PlayerName) || player.Username.Equals(x.PlayerName))); //only calculate scores set by name inputted
+                    Schedule(() => loadingLayer.Text.Value = $"Calculating {scoreList.MD5Hash}");
                     
-                    if (scoreList.Item2.Count == 0)
+                    scoreList.Scores.RemoveAll(x => !fullCalculation && x.LegacyOnlineID == 0); //only calculate submitted scores on a diff, unless requested otherwise
+                    scoreList.Scores.RemoveAll(x => x.Ruleset.OnlineID != ruleset.Value.OnlineID); //only calculate scores from selected ruleset
+                    scoreList.Scores.RemoveAll(x => !(player.PreviousUsernames.Contains(x.User.Username) || player.Username.Equals(x.User.Username))); //only calculate scores set by name inputted
+                    
+                    if(scoreList.Scores.Count == 0){
                         continue;
+                    }
                     //keep a count of ranked diffs with a score on it for bonusPP
                     uniqueScoresCount++;
-                    if (!beatmapDict.ContainsKey(scoreList.Item2[0].BeatmapMD5Hash))
+                    if (!beatmapDict.ContainsKey(scoreList.MD5Hash))
                         continue; //if map doesnt exist in db then skip;
 
-                    var localBeatmapPath = beatmapDict[scoreList.Item2[0].BeatmapMD5Hash];
+                    var localBeatmapPath = beatmapDict[scoreList.MD5Hash];
                     ProcessorWorkingBeatmap working = null;
                     var tempScores = new List<ExtendedScore>();
-
+                    
                     string[] paths = { configManager.GetBindable<string>(Settings.OsuFolderPath).Value, "Songs", localBeatmapPath };
                     string beatmapFilePath = Path.Combine(paths);
                     if (File.Exists(beatmapFilePath)) //song can exist in db but the corresponding .osu file might not 
@@ -257,23 +257,24 @@ namespace PerformanceCalculatorGUI.Screens
 
                     var difficultyCalculator = rulesetInstance.CreateDifficultyCalculator(working);
                     var performanceCalculator = rulesetInstance.CreatePerformanceCalculator();
-                    List<ParsedScore> sortedScores = scoreList.Item2.OrderBy(x => x.Mods).ToList();
+                    List<ScoreInfo> sortedScores = scoreList.Scores.OrderBy(x => rulesetInstance.ConvertToLegacyMods(x.Mods)).ToList();
                     DifficultyAttributes difficultyAttributes = null;
-                    LegacyMods prevMods = (LegacyMods)sortedScores[0].Mods;
+                    LegacyMods prevMods = rulesetInstance.ConvertToLegacyMods(sortedScores[0].Mods);
                     
                     foreach(var decodedScore in sortedScores)
-                    {                        
+                    {
                         var soloScore = populateSoloScoreInfo(decodedScore, working, rulesetInstance);
 
                         Mod[] mods = soloScore.Mods.Select(x => x.ToMod(rulesetInstance)).ToArray();
-
+                        LegacyMods legacyMods = rulesetInstance.ConvertToLegacyMods(decodedScore.Mods);
+                        
                         var scoreInfo = soloScore.ToScoreInfo(rulesets, working.BeatmapInfo);
 
                         //Reuse diff attr. when mods haven't changed
-                        if ((LegacyMods)decodedScore.Mods != prevMods || difficultyAttributes == null) 
+                        if (legacyMods != prevMods || difficultyAttributes == null) 
                         { 
                             difficultyAttributes = difficultyCalculator.Calculate(RulesetHelper.ConvertToLegacyDifficultyAdjustmentMods(rulesetInstance, mods));
-                            prevMods = (LegacyMods)decodedScore.Mods;
+                            prevMods = legacyMods;
                         }
 
                         var livePp = soloScore.PP ?? 0.0;
@@ -366,10 +367,8 @@ namespace PerformanceCalculatorGUI.Screens
             SortedDictionary<string, string> sortedBeatmapDict = new SortedDictionary<string, string>(beatmapDict);
             return sortedBeatmapDict;
         }
-        private static SoloScoreInfo populateSoloScoreInfo(ParsedScore score, ProcessorWorkingBeatmap workingBeatmap, Ruleset ruleset)
+        private static SoloScoreInfo populateSoloScoreInfo(ScoreInfo score, ProcessorWorkingBeatmap workingBeatmap, Ruleset ruleset)
         {
-            var dummyMods = ruleset.ConvertFromLegacyMods((LegacyMods)score.Mods).ToArray();
-            APIMod[] apimods = dummyMods.Select(m => new APIMod(m)).ToArray();
             APIBeatmapSet dummySet = new APIBeatmapSet
             {
                 Title = workingBeatmap.Metadata.Title,
@@ -380,24 +379,18 @@ namespace PerformanceCalculatorGUI.Screens
                 OnlineID = workingBeatmap.BeatmapInfo.OnlineID,
                 DifficultyName = workingBeatmap.BeatmapInfo.DifficultyName,
             };
-            Dictionary<HitResult, int> dummyStatistics = new Dictionary<HitResult, int>(){
-                { HitResult.Great, score.Count300},
-                { HitResult.Miss, score.CountMiss},
-                { HitResult.Ok, score.Count100},
-                { HitResult.Meh, score.Count50},
-            };
             SoloScoreInfo soloScoreInfo = new SoloScoreInfo
             {
-                Accuracy = RulesetHelper.GetAccuracyForRuleset(ruleset.RulesetInfo, dummyStatistics),
-                Statistics = dummyStatistics,
+                Accuracy = RulesetHelper.GetAccuracyForRuleset(ruleset.RulesetInfo, score.Statistics),
+                Statistics = score.Statistics,
                 MaxCombo = score.Combo,
-                Mods = apimods, 
+                Mods = score.Mods.Select(m => new APIMod(m)).ToArray(), 
                 Beatmap = dummyBeatmap,
-                EndedAt = score.ScoreTimestamp,
+                EndedAt = score.Date,
                 BeatmapSet = dummySet,
             };
             soloScoreInfo.Rank = new ScoreProcessor(ruleset).RankFromAccuracy(soloScoreInfo.Accuracy);
-      
+
             return soloScoreInfo;
         }
     }

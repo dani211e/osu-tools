@@ -250,7 +250,7 @@ namespace PerformanceCalculatorGUI.Screens
                     ProcessorWorkingBeatmap working = null;
                     var tempScores = new List<ExtendedScore>();
                     
-                    string[] paths = { configManager.GetBindable<string>(Settings.OsuFolderPath).Value, "Songs", localBeatmapPath };
+                    string[] paths = { osuPath, "Songs", localBeatmapPath };
                     string beatmapFilePath = Path.Combine(paths);
                     if (File.Exists(beatmapFilePath)) //song can exist in db but the corresponding .osu file might not 
                         working = ProcessorWorkingBeatmap.FromFileOrId(beatmapFilePath, cachePath: configManager.GetBindable<string>(Settings.CachePath).Value);
@@ -265,10 +265,10 @@ namespace PerformanceCalculatorGUI.Screens
                     {
                         var soloScore = populateSoloScoreInfo(decodedScore, working, rulesetInstance);
 
-                        Mod[] mods = soloScore.Mods.Select(x => x.ToMod(rulesetInstance)).ToArray();
+                        Mod[] mods = decodedScore.Mods;
                         LegacyMods legacyMods = rulesetInstance.ConvertToLegacyMods(decodedScore.Mods);
                         
-                        var scoreInfo = soloScore.ToScoreInfo(rulesets, working.BeatmapInfo);
+                        var scoreInfo = soloScore.ToScoreInfo(mods, working.BeatmapInfo);
 
                         //Reuse diff attr. when mods haven't changed
                         if (legacyMods != prevMods || difficultyAttributes == null) 

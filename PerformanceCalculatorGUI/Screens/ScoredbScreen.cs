@@ -51,7 +51,7 @@ namespace PerformanceCalculatorGUI.Screens
         private Container userPanelContainer;
         private UserCard userPanel;
 
-        private string currentUser;
+        private string[] currentUser;
 
         private CancellationTokenSource calculationCancellatonToken;
 
@@ -167,7 +167,7 @@ namespace PerformanceCalculatorGUI.Screens
             usernameTextBox.OnCommit += (_, _) => { calculateProfile(usernameTextBox.Current.Value); };
 
             if (RuntimeInfo.IsDesktop)
-                HotReloadCallbackReceiver.CompilationFinished += _ => Schedule(() => { calculateProfile(currentUser); });
+                HotReloadCallbackReceiver.CompilationFinished += _ => Schedule(() => { calculateProfile(currentUser[0]); });
         }
 
         private void calculateProfile(string username)
@@ -197,7 +197,7 @@ namespace PerformanceCalculatorGUI.Screens
 
                 var player = await apiManager.GetJsonFromApi<APIUser>($"users/{username}/{ruleset.Value.ShortName}");
 
-                currentUser = player.Username;
+                currentUser = [player.Username, ..player.PreviousUsernames, player.Id.ToString()];
 
                 Schedule(() =>
                 {
@@ -219,11 +219,11 @@ namespace PerformanceCalculatorGUI.Screens
 
                 var rulesetInstance = ruleset.Value.CreateInstance();
 
-                Schedule(() => loadingLayer.Text.Value = $"Calculating {player.Username} top scores...");
+                Schedule(() => loadingLayer.Text.Value = $"Gathering {player.Username}'s scores...");
 
                 string osuPath = configManager.GetBindable<string>(Settings.OsuFolderPath).Value;
                 SortedDictionary<string, string> beatmapDict = dbMapper(osuPath);
-                var scoresDatabase = RulesetHelper.DecodeLegacyScoreDatabase(new FileStream(Path.Combine(osuPath, @"scores.db"), FileMode.Open), rulesetInstance);
+                var scoresDatabase = RulesetHelper.DecodeLegacyScoreDatabase(new FileStream(Path.Combine(osuPath, @"scores.db"), FileMode.Open), rulesetInstance, currentUser);
                 int uniqueScoresCount = 0;
                 bool fullCalculation = fullCalculationSwitch.Current.Value;
                 milliStart = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond; //timer start
@@ -236,7 +236,6 @@ namespace PerformanceCalculatorGUI.Screens
                     
                     scoreList.Scores.RemoveAll(x => !fullCalculation && x.LegacyOnlineID == 0); //only calculate submitted scores on a diff, unless requested otherwise
                     scoreList.Scores.RemoveAll(x => x.Ruleset.OnlineID != ruleset.Value.OnlineID); //only calculate scores from selected ruleset
-                    scoreList.Scores.RemoveAll(x => !(player.PreviousUsernames.Contains(x.User.Username) || player.Username.Equals(x.User.Username))); //only calculate scores set by name inputted
                     
                     if(scoreList.Scores.Count == 0){
                         continue;
@@ -324,7 +323,7 @@ namespace PerformanceCalculatorGUI.Screens
                     nonBonusLivePP += (decimal)(Math.Pow(0.95, i) * liveOrdered[i].LivePP);
 
                 //Calculate bonusPP based of unique score count on ranked diffs
-                var playcountBonusPP = (decimal)(416.6667 * (1 - Math.Pow(0.9994, uniqueScoresCount)));
+                var playcountBonusPP = (decimal)((417.0 - 1.0 / 3.0) * (1 - Math.Pow(0.995, uniqueScoresCount)));
                 totalLocalPP += playcountBonusPP;
 
                 Schedule(() =>

@@ -299,7 +299,7 @@ namespace PerformanceCalculatorGUI
                    (6 * total);
         }
 
-        public static LegacyScoreDatabase DecodeLegacyScoreDatabase(FileStream stream, Ruleset ruleset)
+        public static LegacyScoreDatabase DecodeLegacyScoreDatabase(FileStream stream, Ruleset ruleset, string[] playerName)
         {
             //based off https://github.com/ppy/osu/wiki/Legacy-database-file-structure#scoresdb
             var scoreDatabase = new LegacyScoreDatabase();
@@ -344,11 +344,11 @@ namespace PerformanceCalculatorGUI
                             scoreInfo.Date = sr.ReadDateTime();
                             sr.ReadInt32(); // should always be -1
                             scoreInfo.LegacyOnlineID = sr.ReadInt64();
-
-                            beatmapScore.Scores.Add(scoreInfo);
+                            if(playerName.Contains(scoreInfo.User.Username))
+                                beatmapScore.Scores.Add(scoreInfo);
                         }
-                    
-                    scoreDatabase.Beatmaps.Add(beatmapScore);
+                    if(beatmapScore.Scores.Count != 0)
+                        scoreDatabase.Beatmaps.Add(beatmapScore);
                 }
             }
             return scoreDatabase;

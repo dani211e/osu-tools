@@ -319,9 +319,10 @@ namespace PerformanceCalculatorGUI
                     };
                     for(int j = 0; j < beatmapScore.ScoreCount; j++)
                     {
+                        int rulesetID = sr.ReadByte();
                         var scoreInfo = new ScoreInfo
                         { 
-                            Ruleset = new RulesetInfo() { OnlineID = sr.ReadByte() },
+                            Ruleset = ruleset.RulesetInfo,
                             ClientVersion = sr.ReadInt32().ToString(),
                             BeatmapHash = sr.ReadString(),
                             User = new APIUser() { Username = sr.ReadString() },
@@ -344,6 +345,8 @@ namespace PerformanceCalculatorGUI
                             scoreInfo.Date = sr.ReadDateTime();
                             sr.ReadInt32(); // should always be -1
                             scoreInfo.LegacyOnlineID = sr.ReadInt64();
+                            if(rulesetID != ruleset.RulesetInfo.OnlineID)
+                                continue;
                             if(playerName.Contains(scoreInfo.User.Username))
                                 beatmapScore.Scores.Add(scoreInfo);
                         }

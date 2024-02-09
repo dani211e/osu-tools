@@ -256,25 +256,18 @@ namespace PerformanceCalculatorGUI.Screens
 
                     var difficultyCalculator = rulesetInstance.CreateDifficultyCalculator(working);
                     var performanceCalculator = rulesetInstance.CreatePerformanceCalculator();
-                    List<ScoreInfo> sortedScores = scoreList.Scores.OrderBy(x => rulesetInstance.ConvertToLegacyMods(x.Mods)).ToList();
-                    DifficultyAttributes difficultyAttributes = null;
-                    LegacyMods prevMods = rulesetInstance.ConvertToLegacyMods(sortedScores[0].Mods);
+                    //due to scorev1 being a problem, we sort group maps by mod and only calc the score with the highest totalscore
+                    List<ScoreInfo> sortedScores = scoreList.Scores.GroupBy(x => rulesetInstance.ConvertToLegacyMods(x.Mods)).Select(x => x.MaxBy(x => x.TotalScore)).ToList();
                     
                     foreach(var decodedScore in sortedScores)
                     {
                         var soloScore = populateSoloScoreInfo(decodedScore, working, rulesetInstance);
 
                         Mod[] mods = decodedScore.Mods;
-                        LegacyMods legacyMods = rulesetInstance.ConvertToLegacyMods(decodedScore.Mods);
                         
                         var scoreInfo = soloScore.ToScoreInfo(mods, working.BeatmapInfo);
 
-                        //Reuse diff attr. when mods haven't changed
-                        if (legacyMods != prevMods || difficultyAttributes == null) 
-                        { 
-                            difficultyAttributes = difficultyCalculator.Calculate(RulesetHelper.ConvertToLegacyDifficultyAdjustmentMods(rulesetInstance, mods));
-                            prevMods = legacyMods;
-                        }
+                        var difficultyAttributes = difficultyCalculator.Calculate(RulesetHelper.ConvertToLegacyDifficultyAdjustmentMods(rulesetInstance, mods));
 
                         var livePp = soloScore.PP ?? 0.0;
                         var perfAttributes = performanceCalculator?.Calculate(scoreInfo, difficultyAttributes);
@@ -323,7 +316,7 @@ namespace PerformanceCalculatorGUI.Screens
                     nonBonusLivePP += (decimal)(Math.Pow(0.95, i) * liveOrdered[i].LivePP);
 
                 //Calculate bonusPP based of unique score count on ranked diffs
-                var playcountBonusPP = (decimal)((417.0 - 1.0 / 3.0) * (1 - Math.Pow(0.995, uniqueScoresCount)));
+                var playcountBonusPP = (decimal)((417.0 - 1.0 / 3.0) * (1 - Math.Pow(0.995, Math.Min(uniqueScoresCount, 1000))));
                 totalLocalPP += playcountBonusPP;
 
                 Schedule(() =>

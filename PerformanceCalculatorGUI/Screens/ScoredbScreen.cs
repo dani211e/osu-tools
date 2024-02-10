@@ -13,16 +13,13 @@ using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Logging;
-using osu.Game.Beatmaps.Legacy;
 using osu.Game.Graphics.Containers;
 using osu.Game.Graphics.UserInterfaceV2;
 using osu.Game.Online.API;
 using osu.Game.Online.API.Requests.Responses;
 using osu.Game.Overlays;
 using osu.Game.Rulesets;
-using osu.Game.Rulesets.Difficulty;
 using osu.Game.Rulesets.Mods;
-using osu.Game.Rulesets.Scoring;
 using osu.Game.Scoring;
 using OsuParsers.Decoders;
 using OsuParsers.Enums.Database;
@@ -270,7 +267,7 @@ namespace PerformanceCalculatorGUI.Screens
                         var difficultyAttributes = difficultyCalculator.Calculate(RulesetHelper.ConvertToLegacyDifficultyAdjustmentMods(rulesetInstance, mods));
 
                         var livePp = soloScore.PP ?? 0.0;
-                        var perfAttributes = performanceCalculator?.Calculate(scoreInfo, difficultyAttributes);
+                        var perfAttributes = await performanceCalculator?.CalculateAsync(scoreInfo, difficultyAttributes, token);
                         soloScore.PP = perfAttributes?.Total ?? 0.0;
 
                         var extendedScore = new ExtendedScore(soloScore, livePp, perfAttributes);
@@ -373,7 +370,8 @@ namespace PerformanceCalculatorGUI.Screens
             };
             SoloScoreInfo soloScoreInfo = new SoloScoreInfo
             {
-                Accuracy = RulesetHelper.GetAccuracyForRuleset(ruleset.RulesetInfo, score.Statistics),
+                Accuracy = score.Accuracy,
+                Rank = score.Rank,
                 Statistics = score.Statistics,
                 MaxCombo = score.Combo,
                 Mods = score.Mods.Select(m => new APIMod(m)).ToArray(), 
@@ -381,7 +379,6 @@ namespace PerformanceCalculatorGUI.Screens
                 EndedAt = score.Date,
                 BeatmapSet = dummySet,
             };
-            soloScoreInfo.Rank = new ScoreProcessor(ruleset).RankFromAccuracy(soloScoreInfo.Accuracy);
 
             return soloScoreInfo;
         }

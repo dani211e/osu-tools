@@ -9,6 +9,7 @@ using osu.Framework.Audio.Track;
 using osu.Framework.Graphics.Textures;
 using osu.Game.Beatmaps;
 using osu.Game.Beatmaps.Legacy;
+using osu.Game.Database;
 using osu.Game.IO.Legacy;
 using osu.Game.Online.API.Requests.Responses;
 using osu.Game.Rulesets;
@@ -347,6 +348,8 @@ namespace PerformanceCalculatorGUI
                             scoreInfo.LegacyOnlineID = sr.ReadInt64();
                             if(rulesetID != ruleset.RulesetInfo.OnlineID)
                                 continue;
+                            scoreInfo.Accuracy = GetAccuracyForRuleset(ruleset.RulesetInfo, scoreInfo.Statistics);
+                            scoreInfo.Rank = StandardisedScoreMigrationTools.ComputeRank(scoreInfo);
                             if(playerName.Contains(scoreInfo.User.Username))
                                 beatmapScore.Scores.Add(scoreInfo);
                         }

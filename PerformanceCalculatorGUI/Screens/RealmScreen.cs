@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,13 +13,15 @@ using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Logging;
+using osu.Framework.Platform;
+using osu.Game.Beatmaps;
 using osu.Game.Database;
 using osu.Game.Graphics.Containers;
 using osu.Game.Graphics.UserInterfaceV2;
 using osu.Game.Online.API.Requests.Responses;
 using osu.Game.Overlays;
 using osu.Game.Rulesets;
-using osu.Game.Rulesets.Mods;
+using osu.Game.Scoring;
 using osuTK.Graphics;
 using PerformanceCalculatorGUI.Components;
 using PerformanceCalculatorGUI.Components.TextBoxes;
@@ -42,7 +45,7 @@ namespace PerformanceCalculatorGUI.Screens
         private Container userPanelContainer;
         private UserCard userPanel;
 
-        private string currentUser;
+        private string[] currentUser;
 
         private CancellationTokenSource calculationCancellatonToken;
 
@@ -152,7 +155,7 @@ namespace PerformanceCalculatorGUI.Screens
             usernameTextBox.OnCommit += (_, _) => { calculateProfile(usernameTextBox.Current.Value); };
 
             if (RuntimeInfo.IsDesktop)
-                HotReloadCallbackReceiver.CompilationFinished += _ => Schedule(() => { calculateProfile(currentUser); });
+                HotReloadCallbackReceiver.CompilationFinished += _ => Schedule(() => { calculateProfile(currentUser[0]); });
         }
 
         private void calculateProfile(string username)
@@ -180,7 +183,7 @@ namespace PerformanceCalculatorGUI.Screens
 
                 var player = await apiManager.GetJsonFromApi<APIUser>($"users/{username}/{ruleset.Value.ShortName}");
 
-                currentUser = player.Username;
+                currentUser = [player.Username, .. player.PreviousUsernames, player.Id.ToString()];
 
                 Schedule(() =>
                 {
@@ -204,50 +207,59 @@ namespace PerformanceCalculatorGUI.Screens
 
                 Schedule(() => loadingLayer.Text.Value = $"Calculating {player.Username} top scores...");
 
-                var apiScores = await apiManager.GetJsonFromApi<List<SoloScoreInfo>>($"users/{player.OnlineID}/scores/best?mode={ruleset.Value.ShortName}&limit=100");
+                var realmScores = GetRealmScores();
 
-                foreach (var score in apiScores)
+                foreach (var scoreList in realmScores)
                 {
-                    if (token.IsCancellationRequested)
-                        return;
-
-                    var working = ProcessorWorkingBeatmap.FromFileOrId(score.BeatmapID.ToString(), cachePath: configManager.GetBindable<string>(Settings.CachePath).Value);
-
-                    Schedule(() => loadingLayer.Text.Value = $"Calculating {working.Metadata}");
-
-                    Mod[] mods = score.Mods.Select(x => x.ToMod(rulesetInstance)).ToArray();
-
-                    var scoreInfo = score.ToScoreInfo(rulesets, working.BeatmapInfo);
-
-                    var parsedScore = new ProcessorScoreDecoder(working).Parse(scoreInfo);
+                    string beatMapHash = scoreList[0].BeatmapHash;
+                    //get the .osu file from lazer file storage
+                    var working = new FlatWorkingBeatmap(Path.Combine(configManager.GetBindable<string>(Settings.OsuFolderPath).Value, "files", beatMapHash[..1], beatMapHash[..2], beatMapHash));
 
                     var difficultyCalculator = rulesetInstance.CreateDifficultyCalculator(working);
-                    var difficultyAttributes = difficultyCalculator.Calculate(RulesetHelper.ConvertToLegacyDifficultyAdjustmentMods(rulesetInstance, mods));
                     var performanceCalculator = rulesetInstance.CreatePerformanceCalculator();
 
-                    var livePp = score.PP ?? 0.0;
-                    var perfAttributes = await performanceCalculator?.CalculateAsync(parsedScore.ScoreInfo, difficultyAttributes, token)!;
-                    score.PP = perfAttributes?.Total ?? 0.0;
+                    List<ScoreInfo> sortedScores = scoreList.Where(s => s.IsLegacyScore)
+                                                            .GroupBy(x => rulesetInstance.ConvertToLegacyMods(x.Mods))
+                                                            .Select(x => x.MaxBy(x => x.LegacyTotalScore))
+                                                            .ToList();
+                    List<ScoreInfo> lazerScores = scoreList.Where(s => !s.IsLegacyScore)
+                                                            .GroupBy(x => x.ModsJson)
+                                                            .Select(x => x.MaxBy(x => x.TotalScore))
+                                                            .ToList();
 
-                    var extendedScore = new ExtendedScore(score, livePp, perfAttributes);
-                    plays.Add(extendedScore);
+                    sortedScores = [..sortedScores, ..lazerScores];
+                    List<ExtendedScore> tempScores = [];
 
-                    Schedule(() => scores.Add(new ExtendedProfileScore(extendedScore)));
+                    foreach (var score in sortedScores)
+                    {
+                        if (token.IsCancellationRequested)
+                            return;
+
+                        var difficultyAttributes = difficultyCalculator.Calculate(RulesetHelper.ConvertToLegacyDifficultyAdjustmentMods(rulesetInstance, score.Mods));
+                        var perfAttributes = await performanceCalculator?.CalculateAsync(score, difficultyAttributes, token)!;
+
+                        score.PP = perfAttributes?.Total ?? 0.0;
+
+                        var livePp = 0; //Don't know how to get live pp with this method
+                        tempScores.Add(new ExtendedScore(score, livePp, perfAttributes));
+                    }
+                    var topScore = tempScores.MaxBy(s => s.SoloScore.PP);
+                    plays.Add(topScore);
+                    Schedule(() => scores.Add(new ExtendedProfileScore(topScore)));
                 }
 
                 if (token.IsCancellationRequested)
                     return;
 
                 var localOrdered = plays.OrderByDescending(x => x.SoloScore.PP).ToList();
-                var liveOrdered = plays.OrderByDescending(x => x.LivePP).ToList();
 
                 Schedule(() =>
                 {
                     foreach (var play in plays)
                     {
                         play.Position.Value = localOrdered.IndexOf(play) + 1;
-                        play.PositionChange.Value = liveOrdered.IndexOf(play) - localOrdered.IndexOf(play);
-                        scores.SetLayoutPosition(scores[liveOrdered.IndexOf(play)], localOrdered.IndexOf(play));
+                        play.PositionChange.Value = play.Position.Value;
+                        scores.SetLayoutPosition(scores[plays.IndexOf(play)], localOrdered.IndexOf(play));
                     }
                 });
 
@@ -257,12 +269,8 @@ namespace PerformanceCalculatorGUI.Screens
 
                 decimal totalLivePP = player.Statistics.PP ?? (decimal)0.0;
 
-                decimal nonBonusLivePP = 0;
-                for (var i = 0; i < liveOrdered.Count; i++)
-                    nonBonusLivePP += (decimal)(Math.Pow(0.95, i) * liveOrdered[i].LivePP);
-
-                //todo: implement properly. this is pretty damn wrong.
-                var playcountBonusPP = (totalLivePP - nonBonusLivePP);
+                //Calculate bonusPP based of unique score count on ranked diffs
+                var playcountBonusPP = (decimal)((417.0 - 1.0 / 3.0) * (1 - Math.Pow(0.995, Math.Min(realmScores.Count, 1000))));
                 totalLocalPP += playcountBonusPP;
 
                 Schedule(() =>
@@ -296,5 +304,22 @@ namespace PerformanceCalculatorGUI.Screens
             calculationCancellatonToken?.Dispose();
             calculationCancellatonToken = null;
         }
+        private List<List<ScoreInfo>> GetRealmScores()
+        {
+            var storage = new NativeStorage(configManager.GetBindable<string>(Settings.OsuFolderPath).Value);
+            var realmAccess = new RealmAccess(storage, @"client.realm");
+
+            var realmScores = realmAccess.Run(r => r.All<ScoreInfo>().Detach());
+            realmScores.RemoveAll(x => !currentUser.Contains(x.User.Username)
+                                    || x.Ruleset.OnlineID != ruleset.Value.OnlineID
+                                    || x.BeatmapInfo.Status != BeatmapOnlineStatus.Ranked
+                                    || x.IsLegacyScore && x.LegacyOnlineID == 0);
+
+            List<List<ScoreInfo>> splitScores = realmScores.GroupBy(g => g.BeatmapHash)
+                                                            .Select(s => s.ToList())
+                                                            .ToList();
+            return splitScores;
+        }
+
     }
 }

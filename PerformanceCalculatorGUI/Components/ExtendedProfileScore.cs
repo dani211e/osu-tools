@@ -24,6 +24,7 @@ using osu.Game.Rulesets;
 using osu.Game.Rulesets.Difficulty;
 using osu.Game.Rulesets.Scoring;
 using osu.Game.Rulesets.UI;
+using osu.Game.Scoring;
 using osu.Game.Utils;
 using osuTK;
 using PerformanceCalculatorGUI.Components.TextBoxes;
@@ -46,6 +47,42 @@ namespace PerformanceCalculatorGUI.Components
             PerformanceAttributes = attributes;
             LivePP = livePP;
         }
+        public ExtendedScore(ScoreInfo score, double livePP, PerformanceAttributes attributes)
+        {
+            SoloScore = ToSoloScoreInfo(score);
+            PerformanceAttributes = attributes;
+            LivePP = livePP;
+        }
+        private static SoloScoreInfo ToSoloScoreInfo(ScoreInfo score)
+        {
+            APIBeatmapSet dummySet = new APIBeatmapSet
+            {
+                Title = score.BeatmapInfo.Metadata.Title,
+                TitleUnicode = score.BeatmapInfo.Metadata.TitleUnicode,
+                Artist = score.BeatmapInfo.Metadata.Artist,
+                ArtistUnicode = score.BeatmapInfo.Metadata.ArtistUnicode,
+            };
+            APIBeatmap dummyBeatmap = new APIBeatmap
+            {
+                OnlineID = score.BeatmapInfo.OnlineID,
+                DifficultyName = score.BeatmapInfo.DifficultyName,
+            };
+            SoloScoreInfo soloScoreInfo = new SoloScoreInfo
+            {
+                PP = score.PP,
+                Accuracy = score.Accuracy,
+                Rank = score.Rank,
+                Statistics = score.Statistics,
+                MaxCombo = score.MaxCombo,
+                Mods = score.APIMods,
+                Beatmap = dummyBeatmap,
+                EndedAt = score.Date,
+                BeatmapSet = dummySet,
+            };
+
+            return soloScoreInfo;
+        }
+
     }
 
     public partial class ExtendedProfileItemContainer : ProfileItemContainer

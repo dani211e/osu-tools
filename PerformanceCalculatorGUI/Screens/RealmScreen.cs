@@ -64,6 +64,9 @@ namespace PerformanceCalculatorGUI.Screens
         [Resolved]
         private RulesetStore rulesets { get; set; }
 
+        [Resolved]
+        private GameHost gameHost { get; set; }
+
         public override bool ShouldShowConfirmationDialogOnSwitch => false;
 
         private const float username_container_height = 40;
@@ -306,7 +309,7 @@ namespace PerformanceCalculatorGUI.Screens
         }
         private List<List<ScoreInfo>> GetRealmScores()
         {
-            var storage = new NativeStorage(configManager.GetBindable<string>(Settings.OsuFolderPath).Value);
+            var storage = gameHost.GetStorage(configManager.GetBindable<string>(Settings.OsuFolderPath).Value);
             var realmAccess = new RealmAccess(storage, @"client.realm");
 
             var realmScores = realmAccess.Run(r => r.All<ScoreInfo>().Detach());

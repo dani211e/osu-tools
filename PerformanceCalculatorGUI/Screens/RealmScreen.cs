@@ -208,8 +208,6 @@ namespace PerformanceCalculatorGUI.Screens
 
                 var rulesetInstance = ruleset.Value.CreateInstance();
 
-                Schedule(() => loadingLayer.Text.Value = $"Calculating {player.Username} top scores...");
-
                 var realmScores = GetRealmScores();
 
                 foreach (var scoreList in realmScores)
@@ -217,6 +215,8 @@ namespace PerformanceCalculatorGUI.Screens
                     string beatMapHash = scoreList[0].BeatmapHash;
                     //get the .osu file from lazer file storage
                     var working = new FlatWorkingBeatmap(Path.Combine(configManager.GetBindable<string>(Settings.OsuFolderPath).Value, "files", beatMapHash[..1], beatMapHash[..2], beatMapHash));
+
+                    Schedule(() => loadingLayer.Text.Value = $"Calculating {player.Username}'s top scores... {realmScores.IndexOf(scoreList)} / {realmScores.Count}");
 
                     var difficultyCalculator = rulesetInstance.CreateDifficultyCalculator(working);
                     var performanceCalculator = rulesetInstance.CreatePerformanceCalculator();

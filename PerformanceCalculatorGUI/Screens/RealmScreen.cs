@@ -208,13 +208,16 @@ namespace PerformanceCalculatorGUI.Screens
 
                 var rulesetInstance = ruleset.Value.CreateInstance();
 
-                var realmScores = GetRealmScores();
+                var storage = gameHost.GetStorage(configManager.GetBindable<string>(Settings.OsuFolderPath).Value);
+                var realmAccess = new RealmAccess(storage, @"client.realm");
+
+                var realmScores = GetRealmScores(realmAccess);
 
                 foreach (var scoreList in realmScores)
                 {
-                    string beatMapHash = scoreList[0].BeatmapHash;
+                    string beatmapHash = scoreList[0].BeatmapHash;
                     //get the .osu file from lazer file storage
-                    var working = new FlatWorkingBeatmap(Path.Combine(configManager.GetBindable<string>(Settings.OsuFolderPath).Value, "files", beatMapHash[..1], beatMapHash[..2], beatMapHash));
+                    var working = new FlatWorkingBeatmap(Path.Combine(configManager.GetBindable<string>(Settings.OsuFolderPath).Value, "files", beatmapHash[..1], beatmapHash[..2], beatmapHash));
 
                     Schedule(() => loadingLayer.Text.Value = $"Calculating {player.Username}'s top scores... {realmScores.IndexOf(scoreList)} / {realmScores.Count}");
 
@@ -225,12 +228,8 @@ namespace PerformanceCalculatorGUI.Screens
                                                             .GroupBy(x => rulesetInstance.ConvertToLegacyMods(x.Mods))
                                                             .Select(x => x.MaxBy(x => x.LegacyTotalScore))
                                                             .ToList();
-                    List<ScoreInfo> lazerScores = scoreList.Where(s => !s.IsLegacyScore)
-                                                            .GroupBy(x => x.ModsJson)
-                                                            .Select(x => x.MaxBy(x => x.TotalScore))
-                                                            .ToList();
+                    sortedScores.AddRange(scoreList.Where(s => !s.IsLegacyScore));
 
-                    sortedScores = [..sortedScores, ..lazerScores];
                     List<ExtendedScore> tempScores = [];
 
                     foreach (var score in sortedScores)
@@ -307,15 +306,14 @@ namespace PerformanceCalculatorGUI.Screens
             calculationCancellatonToken?.Dispose();
             calculationCancellatonToken = null;
         }
-        private List<List<ScoreInfo>> GetRealmScores()
+        private List<List<ScoreInfo>> GetRealmScores(RealmAccess realm)
         {
-            var storage = gameHost.GetStorage(configManager.GetBindable<string>(Settings.OsuFolderPath).Value);
-            var realmAccess = new RealmAccess(storage, @"client.realm");
+            var realmScores = realm.Run(r => r.All<ScoreInfo>().Detach());
 
-            var realmScores = realmAccess.Run(r => r.All<ScoreInfo>().Detach());
             realmScores.RemoveAll(x => !currentUser.Contains(x.User.Username)
                                     || x.Ruleset.OnlineID != ruleset.Value.OnlineID
                                     || x.BeatmapInfo.Status != BeatmapOnlineStatus.Ranked
+                                    || !x.IsLegacyScore && x.OnlineID == -1
                                     || x.IsLegacyScore && x.LegacyOnlineID == 0);
 
             List<List<ScoreInfo>> splitScores = realmScores.GroupBy(g => g.BeatmapHash)

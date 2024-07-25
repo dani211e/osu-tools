@@ -19,6 +19,7 @@ using osu.Game.Rulesets.Difficulty;
 using osu.Game.Rulesets.Mania;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.Osu;
+using osu.Game.Rulesets.Osu.Mods;
 using osu.Game.Rulesets.Scoring;
 using osu.Game.Rulesets.Taiko;
 using osu.Game.Rulesets.Taiko.Objects;
@@ -310,7 +311,7 @@ namespace PerformanceCalculatorGUI
                 var count = sr.ReadInt32();
                 scoreDatabase.BeatmapCount = count;
                 scoreDatabase.Beatmaps = [];
-                for (int i = 0; i < count; i++) 
+                for (int i = 0; i < count; i++)
                 {
                     var beatmapScore = new BeatmapScores
                     {
@@ -322,7 +323,7 @@ namespace PerformanceCalculatorGUI
                     {
                         int rulesetID = sr.ReadByte();
                         var scoreInfo = new ScoreInfo
-                        { 
+                        {
                             Ruleset = ruleset.RulesetInfo,
                             ClientVersion = sr.ReadInt32().ToString(),
                             BeatmapHash = sr.ReadString(),
@@ -342,6 +343,7 @@ namespace PerformanceCalculatorGUI
                         };
                             sr.ReadBoolean(); // scoreInfo does not contain Perfect Combo bool
                             scoreInfo.Mods = ruleset.ConvertFromLegacyMods((LegacyMods)sr.ReadInt32()).ToArray();
+                            scoreInfo.Mods = scoreInfo.Mods.Append(new OsuModClassic()).ToArray();
                             sr.ReadString(); // should always be empty
                             scoreInfo.Date = sr.ReadDateTime();
                             sr.ReadInt32(); // should always be -1
@@ -377,18 +379,18 @@ namespace PerformanceCalculatorGUI
 
             public override Stream GetStream(string storagePath) => throw new NotImplementedException();
         }
-        
-        public struct LegacyScoreDatabase 
+
+        public struct LegacyScoreDatabase
         {
             public int Version { get; set; }
             public int BeatmapCount { get; set; }
             public List<BeatmapScores> Beatmaps { get; set; }
         }
-        public struct BeatmapScores 
+        public struct BeatmapScores
         {
             public string MD5Hash { get; set; }
             public int ScoreCount { get; set; }
-            public List<ScoreInfo> Scores { get; set; } 
+            public List<ScoreInfo> Scores { get; set; }
         }
     }
 }
